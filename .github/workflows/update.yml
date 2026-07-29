@@ -1,0 +1,24 @@
+name: Aggiorna Rotte Aeree
+
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Esegue lo script ogni lunedì a mezzanotte
+  workflow_dispatch:     # Permette di eseguirlo manualmente quando vuoi
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install curl_cffi pandas
+      - run: python scrape.py
+      - name: Commit e Push del file CSV aggiornato
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'action@github.com'
+          git add rotte_complete.csv
+          git commit -m "Aggiornamento automatico rotte" || exit 0
+          git push
