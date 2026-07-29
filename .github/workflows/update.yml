@@ -2,23 +2,36 @@ name: Aggiorna Rotte Aeree
 
 on:
   schedule:
-    - cron: '0 0 * * 1' # Esegue lo script ogni lunedì a mezzanotte
-  workflow_dispatch:     # Permette di eseguirlo manualmente quando vuoi
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write  # Concede i permessi necessari per salvare il CSV nella repository
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - run: pip install curl_cffi pandas
-      - run: python scrape.py
-      - name: Commit e Push del file CSV aggiornato
+
+      - name: Install Dependencies
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'action@github.com'
+          python -m pip install --upgrade pip
+          pip install curl_cffi pandas
+
+      - name: Run Scraper
+        run: python scrape.py
+
+      - name: Commit & Push File CSV
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add rotte_complete.csv
-          git commit -m "Aggiornamento automatico rotte" || exit 0
+          git commit -m "Aggiornamento automatico rotte aeree" || exit 0
           git push
