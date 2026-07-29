@@ -1,64 +1,77 @@
 import json
 import time
 import pandas as pd
-from curl_cffi import requests
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 MILANO_AIRPORTS = ["MXP", "LIN", "BGY"]
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-}
-
 rows = []
-print("Inizio estrazione voli diretti tramite Proxy per bypassare il blocco 403...")
 
-for origin_iata in MILANO_AIRPORTS:
-    print(f"\nRecupero dati per {origin_iata}...")
-    try:
-        # Utilizzo di un proxy CORS aperto per mascherare l'IP di GitHub Actions
-        target_url = f"https://www.flightsfrom.com/{origin_iata}/destinations"
-        proxy_url = f"https://api.allorigins.win/get?url={target_url}"
+print("Inizializzazione Undetected-Chromedriver...")
+
+# Configurazione delle opzioni per Chrome in ambiente headless (GitHub Actions)
+options = uc.ChromeOptions()
+options.add_argument("--headless=new")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-gpu")
+options.add_argument("--window-size=1920,1080")
+options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+# Avvio del browser stealth
+driver = uc.Chrome(options=options)
+
+try:
+    for origin_iata in MILANO_AIRPORTS:
+        url = f"https://www.flightsfrom.com/{origin_iata}/destinations"
+        print(f"\nCaricamento pagina per {origin_iata}: {url}")
         
-        res = requests.get(proxy_url, timeout=20)
+        driver.get(url)
         
-        if res.status_code == 200:
-            contents = res.json().get("contents", "")
+        # Pausa di sicurezza per far completare i controlli Cloudflare e il caricamento JS
+        time.sleep(5)
+        
+        # Estrazione diretta dell'oggetto JavaScript 'metadata' presente nella pagina
+        metadata_json = driver.execute_script("return window.metadata ? JSON.stringify(window.metadata) : null;")
+        
+        if metadata_json:
+            data = json.loads(metadata_json)
+            routes = data.get("routes", [])
             
-            if "var metadata = " in contents:
-                json_part = contents.split("var metadata = ")[1].split(";</script>")[0]
-                data = json.loads(json_part)
-                routes = data.get("routes", [])
+            for route in routes:
+                dest_iata = route.get("iata_to")
+                dest_name = route.get("airport_to", {}).get("name", "")
+                duration = route.get("common_duration")
                 
-                for route in routes:
-                    dest_iata = route.get("iata_to")
-                    dest_name = route.get("airport_to", {}).get("name", "")
-                    duration = route.get("common_duration")
-                    
-                    for aroute in route.get("airlineroutes", []):
-                        rows.append({
-                            "OriginIATA": origin_iata,
-                            "DestinationIATA": dest_iata,
-                            "Airport": dest_name,
-                            "Airline": aroute.get("airline", {}).get("name", ""),
-                            "VisitedWeekdays": aroute.get("days", ""),
-                            "Voli_Sett": aroute.get("frequency", ""),
-                            "Aircraft": aroute.get("aircraft", ""),
-                            "Duration": duration,
-                            "Seasonality": aroute.get("seasonal", "")
-                        })
-                print(f"-> Riuscito: Estratte {len(routes)} destinazioni per {origin_iata}")
-            else:
-                print(f"-> Errore: Blocco metadata non trovato nella risposta del proxy.")
+                for aroute in route.get("airlineroutes", []):
+                    rows.append({
+                        "OriginIATA": origin_iata,
+                        "DestinationIATA": dest_iata,
+                        "Airport": dest_name,
+                        "Airline": aroute.get("airline", {}).get("name", ""),
+                        "VisitedWeekdays": aroute.get("days", ""),
+                        "Voli_Sett": aroute.get("frequency", ""),
+                        "Aircraft": aroute.get("aircraft", ""),
+                        "Duration": duration,
+                        "Seasonality": aroute.get("seasonal", "")
+                    })
+            print(f" -> SUCCESS: Estratte {len(routes)} destinazioni da {origin_iata}")
         else:
-            print(f"-> Errore Proxy HTTP: {res.status_code}")
-            
-    except Exception as e:
-        print(f"-> Errore su {origin_iata}: {e}")
-        
-    time.sleep(2)
+            print(f" -> WARNING: window.metadata non trovato per {origin_iata}. Verifica il sorgente pagina.")
 
-print(f"\nScraping completato. Righe estratte totali: {len(rows)}")
+finally:
+    driver.quit()
 
+print(f"\nScraping completato! Totale rotte estratte: {len(rows)}")
+
+# Generazione file CSV finale
 cols = ["OriginIATA", "DestinationIATA", "Airport", "Airline", "VisitedWeekdays", "Voli_Sett", "Aircraft", "Duration", "Seasonality"]
 df = pd.DataFrame(rows if rows else [], columns=cols)
 df.to_csv("rotte_complete.csv", index=False)
+
+if len(rows) > 0:
+    print("SUCCESS: File rotte_complete.csv salvato con dati validi!")
+else:
+    print("ERRORE: Nessuna riga estratta.")
