@@ -1,5 +1,6 @@
 import json
 import time
+import subprocess
 import pandas as pd
 import undetected_chromedriver as uc
 
@@ -8,6 +9,16 @@ rows = []
 
 print("Inizializzazione Undetected-Chromedriver...")
 
+# Rileviamo la versione principale di Chrome installata per evitare mismatch con ChromeDriver
+chrome_version = None
+try:
+    version_output = subprocess.check_output(["google-chrome", "--version"]).decode("utf-8")
+    # Estraiamo la versione principale (es. "150" da "Google Chrome 150.0.7871.186")
+    chrome_version = int(version_output.strip().split(" ")[2].split(".")[0])
+    print(f"Versione di Chrome rilevata sul sistema: {chrome_version}")
+except Exception as e:
+    print(f"Impossibile rilevare la versione esatta di Chrome, uso fallback automatico: {e}")
+
 options = uc.ChromeOptions()
 options.add_argument("--headless=new")
 options.add_argument("--no-sandbox")
@@ -15,8 +26,11 @@ options.add_argument("--disable-dev-shm-usage")
 options.add_argument("--disable-gpu")
 options.add_argument("--window-size=1920,1080")
 
-# Lasciamo che uc.Chrome trovi automaticamente il binary di Chrome su Ubuntu
-driver = uc.Chrome(options=options, use_subprocess=True)
+# Passiamo version_main per allineare perfettamente ChromeDriver al browser
+if chrome_version:
+    driver = uc.Chrome(options=options, version_main=chrome_version, use_subprocess=True)
+else:
+    driver = uc.Chrome(options=options, use_subprocess=True)
 
 try:
     for origin_iata in MILANO_AIRPORTS:
@@ -24,7 +38,7 @@ try:
         print(f"\nCaricamento pagina per {origin_iata}: {url}")
         
         driver.get(url)
-        time.sleep(6)  # Pausa per superare il check Cloudflare
+        time.sleep(6)  # Pausa di sicurezza per il bypass Cloudflare
         
         metadata_json = driver.execute_script("return window.metadata ? JSON.stringify(window.metadata) : null;")
         
@@ -61,4 +75,4 @@ print(f"\nScraping completato! Totale rotte estratte: {len(rows)}")
 cols = ["OriginIATA", "DestinationIATA", "Airport", "Airline", "VisitedWeekdays", "Voli_Sett", "Aircraft", "Duration", "Seasonality"]
 df = pd.DataFrame(rows if rows else [], columns=cols)
 df.to_csv("rotte_complete.csv", index=False)
-print("File rotte_complete.csv salvato!")
+print("File rotte_complete.csv salvato con successo!")
