@@ -2,8 +2,8 @@ name: Aggiorna Rotte Aeree Milano (Bypass Cloudflare)
 
 on:
   schedule:
-    - cron: '0 0 * * 1' # Ogni lunedì a mezzanotte
-  workflow_dispatch: # Permette l'avvio manuale dal tasto "Run workflow"
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -20,14 +20,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Installa Google Chrome ed Eventuali Dipendenze
+      - name: Installa Xvfb (Display Virtuale)
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget xvfb libxi6 libgconf-2-4
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y xvfb
 
       - name: Installa dipendenze Python
         run: |
