@@ -3,82 +3,93 @@ import time
 import pandas as pd
 from curl_cffi import requests
 
+# Selezioniamo solo i 3 hub di Milano
+MILANO_AIRPORTS = ["MXP", "LIN", "BGY"]
+
 headers = {
-    "Accept": "application/json",
-    "Origin": "https://www.flightsfrom.com",
-    "Referer": "https://www.flightsfrom.com/",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
 rows = []
+print("Inizio estrazione voli diretti da Milano (MXP, LIN, BGY)...")
 
-try:
-    print("Recupero elenco aeroporti...")
-    r = requests.get("https://www.flightsfrom.com/airports", impersonate="chrome", headers=headers, timeout=15)
-    
-    if r.status_code != 200:
-        print(f"Errore nella richiesta iniziale aeroporti: Status {r.status_code}")
-        exit(1)
+for origin_iata in MILANO_AIRPORTS:
+    try:
+        url = f"https://www.flightsfrom.com/{origin_iata}/destinations"
+        print(f"Richiesta dati per {origin_iata}...")
         
-    airports_data = r.json().get("response", {}).get("airports", [])
-    print(f"Trovati {len(airports_data)} aeroporti.")
-
-    # NOTA: Per un test iniziale veloce puoi provare con un sottoinsieme: airports_data[:20]
-    for ap in airports_data:
-        origin_iata = ap.get("IATA")
-        if not origin_iata:
-            continue
+        res = requests.get(
+            url,
+            impersonate="chrome124",
+            headers=headers,
+            timeout=15
+        )
+        
+        if res.status_code == 200:
+            html_content = res.text
+            start_str = "var metadata = "
             
-        try:
-            res = requests.get(
-                f"https://www.flightsfrom.com/{origin_iata}/destinations",
-                impersonate="chrome",
-                headers={"Accept": "text/html", "Referer": "https://www.flightsfrom.com/"},
-                timeout=10
-            )
-            
-            if res.status_code == 200:
-                html_content = res.text
-                start_str = "var metadata = "
-                if start_str in html_content:
-                    json_str = html_content.split(start_str)[1].split(";</script>")[0]
-                    data = json.loads(json_str)
+            if start_str in html_content:
+                json_str = html_content.split(start_str)[1].split(";</script>")[0]
+                data = json.loads(json_str)
+                
+                # Iteriamo sulle rotte trovate
+                for route in data.get("routes", []):
+                    dest_iata = route.get("iata_to")
+                    dest_airport_name = route.get("airport_to", {}).get("name", "")
+                    duration_min = route.get("common_duration")
                     
-                    for route in data.get("routes", []):
-                        dest_iata = route.get("iata_to")
-                        dest_airport_name = route.get("airport_to", {}).get("name", "")
-                        duration_min = route.get("common_duration")
+                    for aroute in route.get("airlineroutes", []):
+                        airline_name = aroute.get("airline", {}).get("name")
+                        weekdays = aroute.get("days", "")
+                        frequency = aroute.get("frequency", "")
+                        aircraft = aroute.get("aircraft", "")
+                        seasonality = aroute.get("seasonal", "")
                         
-                        for aroute in route.get("airlineroutes", []):
-                            airline_name = aroute.get("airline", {}).get("name")
-                            weekdays = aroute.get("days", "")
-                            frequency = aroute.get("frequency", "")
-                            aircraft = aroute.get("aircraft", "")
-                            seasonality = aroute.get("seasonal", "")
-                            
-                            rows.append({
-                                "OriginIATA": origin_iata,
-                                "DestinationIATA": dest_iata,
-                                "Airport": dest_airport_name,
-                                "Airline": airline_name,
-                                "VisitedWeekdays": weekdays,
-                                "Voli_Sett": frequency,
-                                "Aircraft": aircraft,
-                                "Duration": duration_min,
-                                "Seasonality": seasonality
-                            })
-            time.sleep(0.5)  # Pausa precauzionale per evitare blocchi IP
-        except Exception as e:
-            print(f"Errore durante lo scraping dell'aeroporto {origin_iata}: {e}")
-            continue
+                        rows.append({
+                            "OriginIATA": origin_iata,
+                            "DestinationIATA": dest_iata,
+                            "Airport": dest_airport_name,
+                            "Airline": airline_name,
+                            "VisitedWeekdays": weekdays,
+                            "Voli_Sett": frequency,
+                            "Aircraft": aircraft,
+                            "Duration": duration_min,
+                            "Seasonality": seasonality
+                        })
+                print(f" -> OK: Estratte rotte per {origin_iata}")
+            else:
+                print(f" -> ATTENZIONE: Blocco metadata non trovato in {origin_iata}")
+        else:
+            print(f" -> ERRORE: Status code {res.status_code} su {origin_iata}")
+            
+        time.sleep(1.5)  # Pausa di cortesia
+        
+    except Exception as e:
+        print(f" -> ERRORE CRITICO su {origin_iata}: {e}")
 
-    if rows:
-        df = pd.DataFrame(rows)
-        df.to_csv("rotte_complete.csv", index=False)
-        print(f"File rotte_complete.csv generato con successo con {len(rows)} righe!")
-    else:
-        print("Nessun dato estratto. Generazione CSV annullata.")
-        exit(1)
+print(f"\nScraping completato! Totale rotte dirette trovate: {len(rows)}")
+
+# Generazione file CSV finale
+if rows:
+    df = pd.DataFrame(rows)
+    df.to_csv("rotte_complete.csv", index=False)
+    print("File rotte_complete.csv creato con successo!")
+else:
+    print("Nessun dato estratto. Creo un file di struttura vuoto per evitare blocchi.")
+    pd.DataFrame(columns=["OriginIATA","DestinationIATA","Airport","Airline","VisitedWeekdays","Voli_Sett","Aircraft","Duration","Seasonality"]).to_csv("rotte_complete.csv", index=False)
 
 except Exception as global_e:
     print(f"Errore critico nello script: {global_e}")
