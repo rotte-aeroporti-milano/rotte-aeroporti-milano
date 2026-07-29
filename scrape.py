@@ -3,7 +3,7 @@ import time
 import pandas as pd
 from curl_cffi import requests
 
-# Selezioniamo solo i 3 hub di Milano
+# Gli aeroporti che ti interessano
 MILANO_AIRPORTS = ["MXP", "LIN", "BGY"]
 
 headers = {
@@ -45,7 +45,7 @@ for origin_iata in MILANO_AIRPORTS:
                 json_str = html_content.split(start_str)[1].split(";</script>")[0]
                 data = json.loads(json_str)
                 
-                # Iteriamo sulle rotte trovate
+                # Estrazione dati rotte
                 for route in data.get("routes", []):
                     dest_iata = route.get("iata_to")
                     dest_airport_name = route.get("airport_to", {}).get("name", "")
@@ -71,11 +71,11 @@ for origin_iata in MILANO_AIRPORTS:
                         })
                 print(f" -> OK: Estratte rotte per {origin_iata}")
             else:
-                print(f" -> ATTENZIONE: Blocco metadata non trovato in {origin_iata}")
+                print(f" -> ATTENZIONE: Blocco metadata non trovato per {origin_iata}")
         else:
             print(f" -> ERRORE: Status code {res.status_code} su {origin_iata}")
             
-        time.sleep(1.5)  # Pausa di cortesia
+        time.sleep(1.5)
         
     except Exception as e:
         print(f" -> ERRORE CRITICO su {origin_iata}: {e}")
@@ -88,9 +88,6 @@ if rows:
     df.to_csv("rotte_complete.csv", index=False)
     print("File rotte_complete.csv creato con successo!")
 else:
-    print("Nessun dato estratto. Creo un file di struttura vuoto per evitare blocchi.")
-    pd.DataFrame(columns=["OriginIATA","DestinationIATA","Airport","Airline","VisitedWeekdays","Voli_Sett","Aircraft","Duration","Seasonality"]).to_csv("rotte_complete.csv", index=False)
-
-except Exception as global_e:
-    print(f"Errore critico nello script: {global_e}")
-    exit(1)
+    print("Nessun dato estratto. Genero una struttura di sicurezza vuota.")
+    cols = ["OriginIATA", "DestinationIATA", "Airport", "Airline", "VisitedWeekdays", "Voli_Sett", "Aircraft", "Duration", "Seasonality"]
+    pd.DataFrame(columns=cols).to_csv("rotte_complete.csv", index=False)
